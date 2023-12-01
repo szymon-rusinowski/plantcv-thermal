@@ -4,6 +4,9 @@ import cv2
 import numpy as np
 import argparse
 import string
+import ast
+from pathlib import Path
+import os
 from plantcv import plantcv as pcv
 
 ### Parse command-line arguments
@@ -12,7 +15,9 @@ def options():
     parser.add_argument("-i", "--image", help="Input image file.", required=True)
     parser.add_argument("-o", "--outdir", help="Output directory for image files.", required=False)
     parser.add_argument("-r","--result", help="result file.", required= False )
+    parser.add_argument("-c","--coordinates", help="coordinates string", required= False )
     parser.add_argument("-w","--writeimg", help="write out images.", default=False, action="store_true")
+    parser.add_argument("-t","--temp_thresh", help="max_temp", default=False)
     parser.add_argument("-D", "--debug", help="can be set to 'print' or None (or 'plot' if in jupyter) prints intermediate images.", default=None)
     args = parser.parse_args()
     return args
@@ -34,7 +39,10 @@ def get_mask_from_file(filedir):
 def main():
     # Get options
     args = options()
-
+    filepath = args.image
+    filebase = filepath.split("/")[-1]
+    filename_ext = filebase.split(".")[0]
+    coordinates = ast.literal_eval(args.coordinates)
     pcv.params.debug=args.debug #set debug mode
     pcv.params.debug_outdir=args.outdir #set output directory
 
@@ -43,7 +51,7 @@ def main():
     # Inputs:
     #   filename - Image file to be read (possibly including a path)
     #   mode - Return mode of image ("native," "rgb,", "rgba", "gray", or "flir"), defaults to "native"
-    thermal_data,path,filename = pcv.readimage(filename="./inputdir/G_A0_2.csv", mode="csv")
+    thermal_data,path,filename = pcv.readimage(filename=filepath, mode="csv")
 
 
     # Rescale the thermal data to a colorspace with range 0-255
@@ -63,7 +71,7 @@ def main():
     #   max_value - Value to apply above threshold (255 = white)
     #   object_type - 'light' (default) or 'dark'. If the object is lighter than the background then standard
     #                 threshold is done. If the object is darker than the background then inverse thresholding is done.
-    bin_mask = pcv.threshold.binary(gray_img=thermal_data, threshold=25, object_type='dark')
+    bin_mask = pcv.threshold.binary(gray_img=thermal_data, threshold=float(args.temp_thresh), object_type='dark')
 
 
     # Identify objects
@@ -83,8 +91,8 @@ def main():
     #   h - The height of the rectangle
     #   w - The width of the rectangle
     shape = scaled_thermal_img.shape
-    print(shape)
-    roi = pcv.roi.rectangle(img=scaled_thermal_img, x=0, y=128, h=64, w=64)
+    print(coordinates)
+    roi = pcv.roi.rectangle(img=scaled_thermal_img, x=coordinates[0], y=coordinates[1], h=coordinates[2], w=coordinates[3])
 
     mask = pcv.roi.filter(mask=bin_mask, roi=roi, roi_type="cutto")
     ##mask = get_mask_from_file("./inputdir/G_A0_2.jpg")
@@ -119,7 +127,7 @@ def main():
     #   label - Optional label parameter, modifies the variable name of observations recorded
     #analysis_img = pcv.analyze_thermal_values(thermal_array=thermal_data, mask=bin_mask, histplot=True, label="default")
 
-    analysis_img = pcv.analyze.thermal(thermal_img=thermal_data, labeled_mask=mask, n_labels=1, bins=10, label="default")
+    analysis_img = pcv.analyze.thermal(thermal_img=thermal_data, labeled_mask=mask, n_labels=1, bins=100, label="default")
     # Pseudocolor the thermal data
 
     # Inputs:
@@ -137,12 +145,24 @@ def main():
     #     colorbar - If False then the colorbar won't be displayed (default colorbar=True)
     #pseudo_img = pcv.visualize.pseudocolor(gray_img = thermal_data, mask=kept_mask, cmap='viridis',
     #                                       min_value=31, max_value=35)
-    pseudo_img = pcv.visualize.pseudocolor(gray_img = thermal_data, mask=mask, cmap='jet', min_value=16, max_value=30)
+    pseudo_img = pcv.visualize.pseudocolor(gray_img = thermal_data, mask=mask, cmap='jet', min_value=17, max_value=23)
     # Write shape and thermal data to results file
-    pcv.outputs.save_results(filename="therm_res")
-    #pcv.print_results(filename=args.result)
-    outdir = str(args.outdir) + "/tutorial.png"
+
+    outdir = str(args.outdir)
+    pcv.outputs.save_results(filename=  outdir + "/" + filename_ext  +"_therm.csv")
+    #pcv.print_results(filename="therm_res")
     print(outdir)
-    pcv.print_image(img=pseudo_img, filename= outdir)
+    pcv.print_image(img=pseudo_img, filename= outdir + "/" + filename_ext  +"_pseudo.png")
+    pcv.print_image(img=analysis_img, filename= outdir + "/" + filename_ext  +"_spectra.png")
+    params_list = []
+    params_list.append(pcv.outputs.observations['default1']['max_temp']['value'])
+    params_list.append(pcv.outputs.observations['default1']['min_temp']['value'])
+    params_list.append(pcv.outputs.observations['default1']['mean_temp']['value'])
+    print(params_list)
+
+    np.savetxt(outdir + "/" + filename_ext  +"_data.csv",
+                       params_list,
+                       delimiter =", ",
+                       fmt ='%s')
 if __name__ == '__main__':
     main()

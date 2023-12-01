@@ -8,6 +8,10 @@ services:
       context: ./
       dockerfile: Dockerfile
       target: development
+    environment:
+      INPUT_FILE: ${INPUT_FILE}
+      COORDS: ${COORDS}
+      TEMP: ${TEMP}
     volumes:
       - ./src:/src
       - ./entrypoint.sh:/entrypoint.sh
